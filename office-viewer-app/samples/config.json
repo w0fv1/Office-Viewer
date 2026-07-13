@@ -1,0 +1,11 @@
+{
+  "product": "Office Viewer",
+  "localFirst": true,
+  "formats": [
+    "docx",
+    "xlsx",
+    "pptx",
+    "pdf",
+    "zip"
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "name": "office-viewer-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "lint": "oxlint",
+    "preview": "vite preview",
+    "sync:office": "node scripts/sync-office-capabilities.mjs",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "7z-wasm": "^1.2.0",
+    "ag-psd": "^31.0.2",
+    "cfb": "^1.2.2",
+    "dompurify": "^3.4.11",
+    "exceljs": "^4.4.0",
+    "fflate": "^0.8.3",
+    "jszip": "^3.10.1",
+    "lucide-react": "^1.24.0",
+    "mammoth": "^1.12.0",
+    "marked": "^18.0.6",
+    "node-unrar-js": "^2.0.2",
+    "papaparse": "^5.5.4",
+    "pdfjs-dist": "^6.1.200",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "utif": "^3.1.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.4",
+    "@types/node": "^24.13.2",
+    "@types/papaparse": "^5.5.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "jsdom": "^29.1.1",
+    "oxlint": "^1.71.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.1.1",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  }
+}

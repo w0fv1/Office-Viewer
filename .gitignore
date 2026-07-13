@@ -1,0 +1,7 @@
+node_modules/
+dist/
+target/
+office-viewer-app/node_modules/
+office-viewer-app/dist/
+office-viewer-app/src-tauri/target/
+*.log
