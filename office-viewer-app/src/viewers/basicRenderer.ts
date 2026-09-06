@@ -1,15 +1,17 @@
 import { marked } from 'marked'
-import { bytesToText } from '../lib/bytes'
-import { formatBytes } from '../lib/format'
+import { detectText } from '../lib/bytes'
 import type { FilePayload } from '../types'
 import { sanitizeHtml } from './html'
-import type { HexSummary, LoadState } from './previewTypes'
+import type { LoadState } from './previewTypes'
 
 export type BasicViewerId = 'markdown' | 'html' | 'svg' | 'json' | 'text' | 'fallback'
 
 export async function renderBasicPayload(payload: FilePayload, viewerId: BasicViewerId): Promise<LoadState> {
   try {
-    const text = bytesToText(payload.bytes)
+    const bytes = payload.extension === 'svgz' ? (await import('fflate')).gunzipSync(payload.bytes) : payload.bytes
+    const text = detectText(bytes)
+    if (text === null) return { status: 'ready', content: { kind: 'unsupported' } }
+    if (viewerId === 'fallback') return { status: 'ready', content: { kind: 'text', text } }
     if (viewerId === 'markdown') {
       const html = await marked.parse(text, { async: false })
       return {
@@ -35,47 +37,16 @@ export async function renderBasicPayload(payload: FilePayload, viewerId: BasicVi
         stats: [{ label: '节点', value: String(Array.from(text.matchAll(/<[^/!][^>]*>/g)).length) }],
       }
     }
-    if (viewerId === 'json' || viewerId === 'text') {
-      const rendered = viewerId === 'json' && payload.extension === 'json' ? JSON.stringify(JSON.parse(text), null, 2) : text
-      return {
-        status: 'ready',
-        content: { kind: 'text', text: rendered },
-        stats: [
-          { label: '行数', value: String(rendered.split(/\r?\n/).length) },
-          { label: '字符', value: String(rendered.length) },
-        ],
-      }
-    }
-    const summary = createHexSummary(payload)
+    const rendered = viewerId === 'json' && payload.extension === 'json' ? JSON.stringify(JSON.parse(text), null, 2) : text
     return {
       status: 'ready',
-      content: { kind: 'hex', summary },
+      content: { kind: 'text', text: rendered },
       stats: [
-        { label: 'Fallback', value: 'HEX' },
-        { label: '采样', value: formatBytes(Math.min(payload.size, 1024)) },
+        { label: '行数', value: String(rendered.split(/\r?\n/).length) },
+        { label: '字符', value: String(rendered.length) },
       ],
     }
   } catch (error) {
     return { status: 'error', message: error instanceof Error ? error.message : String(error) }
-  }
-}
-
-function createHexSummary(payload: FilePayload): HexSummary {
-  const sample = payload.bytes.slice(0, 1024)
-  const rows = []
-  for (let offset = 0; offset < sample.length; offset += 16) {
-    const chunk = sample.slice(offset, offset + 16)
-    rows.push({
-      offset: offset.toString(16).padStart(8, '0'),
-      hex: Array.from(chunk).map((byte) => byte.toString(16).padStart(2, '0')).join(' '),
-      ascii: Array.from(chunk).map((byte) => byte >= 32 && byte <= 126 ? String.fromCharCode(byte) : '.').join(''),
-    })
-  }
-  const printable = sample.filter((byte) => byte === 9 || byte === 10 || byte === 13 || (byte >= 32 && byte <= 126)).length
-  const textPreview = sample.length > 0 && printable / sample.length > 0.75 ? bytesToText(payload.bytes).slice(0, 4000) : undefined
-  return {
-    intro: `没有可靠 viewer 可用于 ${payload.extension ?? 'unknown'}。已显示文件元信息、文本尝试和前 ${formatBytes(sample.length)} 的十六进制内容。`,
-    textPreview,
-    rows,
   }
 }

@@ -1,14 +1,16 @@
+import { renderOpenDocument } from './openDocumentRenderer'
+import { audioFormats, videoFormats } from './mediaFormats'
 import type { Layer } from 'ag-psd'
 import type ExcelJS from 'exceljs'
 import type JSZip from 'jszip'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { bytesToArrayBuffer, bytesToObjectUrl, bytesToText } from '../lib/bytes'
 import { formatBytes } from '../lib/format'
-import { decodeXml, stripXml, xmlAttribute, xmlRepeat } from '../lib/xml'
+import { decodeXml, stripXml } from '../lib/xml'
 import type { FilePayload } from '../types'
-import type { CfbSummary, EpubSummary, LoadState, PdfSummary, PresentationSummary, SheetTable, XMindSummary } from './previewTypes'
+import type { LoadState, PdfSummary, PresentationSummary, XMindSummary } from './previewTypes'
 
-export type RenderKind = 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'tiff' | 'icns' | 'archive' | 'epub' | 'xmind' | 'psd' | 'font'
+export type RenderKind = 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'tiff' | 'icns' | 'archive' | 'epub' | 'xmind' | 'psd' | 'font' | 'audio' | 'video' | 'email'
 
 export async function renderPayload(payload: FilePayload, kind: RenderKind): Promise<LoadState> {
   try {
@@ -24,6 +26,7 @@ async function renderReadyPayload(payload: FilePayload, kind: RenderKind): Promi
   }
 
   if (kind === 'presentation') {
+    if (['odp', 'otp', 'fodp'].includes(payload.extension ?? '')) return renderOpenDocument(payload, 'presentation')
     const presentation = await parsePresentation(payload.bytes)
     return {
       status: 'ready',
@@ -39,16 +42,11 @@ async function renderReadyPayload(payload: FilePayload, kind: RenderKind): Promi
     return (await import('./archiveRenderer')).renderArchivePayload(payload)
   }
 
-  if (kind === 'epub') {
-    const epub = await parseEpub(payload.bytes)
-    return {
-      status: 'ready',
-      content: { kind: 'epub', summary: epub },
-      stats: [
-        { label: '章节', value: String(epub.chapters.length) },
-        { label: '作者', value: epub.creator || '-' },
-      ],
-    }
+  if (kind === 'epub') return (await import('./bookRenderer')).renderBook(payload)
+  if (kind === 'email') return (await import('./emailRenderer')).renderEmail(payload)
+  if (kind === 'audio' || kind === 'video') {
+    const formats = kind === 'audio' ? audioFormats : videoFormats
+    return { status: 'ready', content: { kind: 'media', media: kind, objectUrl: bytesToObjectUrl(payload.bytes, formats[payload.extension ?? ''] ?? payload.mime) } }
   }
 
   if (kind === 'xmind') {
@@ -197,19 +195,7 @@ async function renderSpreadsheet(payload: FilePayload): Promise<LoadState> {
     }
   }
 
-  if (payload.extension === 'ods') {
-    const ods = await parseOds(payload.bytes)
-    const first = ods.tables[0]
-    return {
-      status: 'ready',
-      content: { kind: 'sheet', tables: ods.tables },
-      stats: [
-        { label: 'Sheet', value: String(ods.tables.length) },
-        { label: '首表行数', value: String(first?.rows.length ?? 0) },
-        { label: '首表列数', value: String(maxColumns(first?.rows ?? [])) },
-      ],
-    }
-  }
+  if (['ods', 'ots', 'fods'].includes(payload.extension ?? '')) return renderOpenDocument(payload, 'spreadsheet')
 
   if (payload.extension === 'xls') {
     const workbook = await parseLegacyXls(payload.bytes)
@@ -224,14 +210,7 @@ async function renderSpreadsheet(payload: FilePayload): Promise<LoadState> {
         ],
       }
     }
-    return {
-      status: 'ready',
-      content: { kind: 'cfb', summary: workbook.cfb },
-      stats: [
-        { label: 'CFB 流', value: String(workbook.cfb.entries.length) },
-        { label: '兼容性', value: '结构预览' },
-      ],
-    }
+    return { status: 'ready', content: { kind: 'unsupported' } }
   }
 
   const { default: ExcelJS } = await import('exceljs')
@@ -261,68 +240,20 @@ function extractXmlText(xml: string): string {
     .join('\n')
 }
 
-async function parseOds(bytes: Uint8Array): Promise<{ tables: SheetTable[] }> {
-  const { default: JSZip } = await import('jszip')
-  const zip = await JSZip.loadAsync(bytesToArrayBuffer(bytes))
-  const content = await zip.file('content.xml')?.async('text')
-  if (!content) return { tables: [] }
-
-  const tables = Array.from(content.matchAll(/<table:table\b([^>]*)>([\s\S]*?)<\/table:table>/g))
-  return {
-    tables: tables.map((match, index) => ({
-      name: xmlAttribute(match[1], 'table:name') || `Sheet ${index + 1}`,
-      rows: odsRows(match[2]),
-    })),
-  }
-}
-
-function odsRows(tableXml: string): string[][] {
-  const rows: string[][] = []
-  const rowElements = Array.from(tableXml.matchAll(/<table:table-row\b([^>]*)>([\s\S]*?)<\/table:table-row>/g))
-  for (const rowElement of rowElements) {
-    if (rows.length >= 500) break
-    const repeatRows = Math.min(xmlRepeat(rowElement[1], 'table:number-rows-repeated'), 50)
-    const row = odsRow(rowElement)
-    for (let index = 0; index < repeatRows; index += 1) {
-      rows.push(row)
-    }
-  }
-  return rows
-}
-
-function odsRow(rowElement: RegExpMatchArray): string[] {
-  const cells: string[] = []
-  for (const cell of Array.from(rowElement[2].matchAll(/<table:table-cell\b([^>]*)>([\s\S]*?)<\/table:table-cell>/g))) {
-    const repeat = Math.min(xmlRepeat(cell[1], 'table:number-columns-repeated'), 100)
-    const value = Array.from(cell[2].matchAll(/<text:p\b[^>]*>([\s\S]*?)<\/text:p>/g)).map((match) => decodeXml(stripXml(match[1]))).join('\n')
-    for (let index = 0; index < repeat; index += 1) {
-      cells.push(value)
-    }
-  }
-  return cells
-}
-
-async function parseLegacyXls(bytes: Uint8Array): Promise<{ sheets: string[]; rows: string[][]; cfb: CfbSummary }> {
+async function parseLegacyXls(bytes: Uint8Array): Promise<{ sheets: string[]; rows: string[][] }> {
   const CFB = await import('cfb')
   const cfb = CFB.read(bytes, { type: 'array' })
   const workbookEntry = cfb.FileIndex.find((entry) => /(^|\/)(Workbook|Book)$/.test(entry.name) && entry.content)
-  const summary = {
-    entries: cfb.FullPaths.map((name, index) => ({
-      name,
-      size: cfb.FileIndex[index]?.content?.length ?? 0,
-    })).filter((entry) => entry.name !== '/'),
-  }
-  if (!workbookEntry?.content) return { sheets: [], rows: [], cfb: summary }
+  if (!workbookEntry?.content) return { sheets: [], rows: [] }
 
   const workbookBytes = new Uint8Array(workbookEntry.content)
   const globals = parseBiffGlobals(workbookBytes)
   const firstSheet = globals.sheets[0]
-  if (!firstSheet) return { sheets: globals.sheets.map((sheet) => sheet.name), rows: [], cfb: summary }
+  if (!firstSheet) return { sheets: globals.sheets.map((sheet) => sheet.name), rows: [] }
 
   return {
     sheets: globals.sheets.map((sheet) => sheet.name),
     rows: parseBiffSheet(workbookBytes, firstSheet.offset, globals.sharedStrings),
-    cfb: summary,
   }
 }
 
@@ -515,23 +446,6 @@ function cellToString(value: ExcelJS.CellValue): string {
   return String(value)
 }
 
-async function parseEpub(bytes: Uint8Array): Promise<EpubSummary> {
-  const { default: JSZip } = await import('jszip')
-  const zip = await JSZip.loadAsync(bytesToArrayBuffer(bytes))
-  const container = await zip.file('META-INF/container.xml')?.async('text')
-  const packagePath = container ? parseXmlAttribute(container, 'full-path') : ''
-  const opf = packagePath ? await zip.file(packagePath)?.async('text') : undefined
-  if (!opf) {
-    return { title: '', creator: '', packagePath: packagePath || 'META-INF/container.xml', chapters: Object.keys(zip.files).filter((name) => name.endsWith('.xhtml') || name.endsWith('.html')).slice(0, 100) }
-  }
-
-  const title = parseXmlTag(opf, 'dc:title')
-  const creator = parseXmlTag(opf, 'dc:creator')
-  const manifest = parseManifest(opf)
-  const chapters = parseSpineIds(opf).map((id) => manifest.get(id)).filter((value): value is string => Boolean(value))
-  return { title, creator, packagePath, chapters: chapters.slice(0, 100) }
-}
-
 async function parseXMind(bytes: Uint8Array): Promise<XMindSummary> {
   const { default: JSZip } = await import('jszip')
   const zip = await JSZip.loadAsync(bytesToArrayBuffer(bytes))
@@ -565,28 +479,4 @@ function flattenPsdLayers(layers: Layer[]): string[] {
     layer.name ?? '(unnamed layer)',
     ...flattenPsdLayers(layer.children ?? []),
   ])
-}
-
-function parseXmlAttribute(xml: string, attribute: string): string {
-  return xmlAttribute(xml, attribute)
-}
-
-function parseXmlTag(xml: string, tag: string): string {
-  const escaped = tag.replace(':', '\\:')
-  const match = xml.match(new RegExp(`<${escaped}[^>]*>([\\s\\S]*?)<\\/${escaped}>`))
-  return match ? decodeXml(match[1].trim()) : ''
-}
-
-function parseManifest(opf: string): Map<string, string> {
-  const manifest = new Map<string, string>()
-  for (const match of opf.matchAll(/<item\s+([^>]+)>/g)) {
-    const id = parseXmlAttribute(match[1], 'id')
-    const href = parseXmlAttribute(match[1], 'href')
-    if (id && href) manifest.set(id, href)
-  }
-  return manifest
-}
-
-function parseSpineIds(opf: string): string[] {
-  return Array.from(opf.matchAll(/<itemref\s+([^>]+)>/g)).map((match) => parseXmlAttribute(match[1], 'idref')).filter(Boolean)
 }

@@ -21,3 +21,14 @@ export function decodeXml(value: string): string {
     .replaceAll('&apos;', "'")
     .replaceAll('&amp;', '&')
 }
+
+export function parseXmlDocument(value: string): Document {
+  if (/<!ENTITY\s/i.test(value)) throw new Error('文档 XML 无效')
+  const document = new DOMParser().parseFromString(value, 'application/xml')
+  if (document.querySelector('parsererror')) throw new Error('文档 XML 无效')
+  return document
+}
+
+export function escapeHtml(value: string): string {
+  return value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;')
+}

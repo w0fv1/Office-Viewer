@@ -1,7 +1,8 @@
+import { renderOpenDocument } from './openDocumentRenderer'
 import JSZip from 'jszip'
 import mammoth from 'mammoth'
 import { bytesToArrayBuffer, bytesToText } from '../lib/bytes'
-import { decodeXml, stripXml, xmlRepeat } from '../lib/xml'
+import { decodeXml, stripXml } from '../lib/xml'
 import type { FilePayload } from '../types'
 import { sanitizeHtml } from './html'
 import type { LoadState, WordSummary } from './previewTypes'
@@ -9,17 +10,7 @@ import type { LoadState, WordSummary } from './previewTypes'
 export { sanitizeHtml } from './html'
 
 export async function renderWordPayload(payload: FilePayload): Promise<LoadState> {
-  if (payload.extension === 'odt') {
-    const odt = await parseOdt(payload.bytes)
-    return {
-      status: 'ready',
-      content: { kind: 'word', html: sanitizeHtml(odt.html), outline: odt.outline },
-      stats: [
-        { label: '段落', value: String(odt.paragraphs) },
-        { label: '标题', value: String(odt.outline.length) },
-      ],
-    }
-  }
+  if (['odt', 'ott', 'fodt'].includes(payload.extension ?? '')) return renderOpenDocument(payload, 'text')
 
   if (payload.extension === 'rtf') {
     const rtf = parseRtf(bytesToText(payload.bytes))
@@ -47,29 +38,6 @@ export async function renderWordPayload(payload: FilePayload): Promise<LoadState
       { label: '标题', value: String(word.outline.length) },
     ],
   }
-}
-
-async function parseOdt(bytes: Uint8Array): Promise<{ html: string; outline: WordSummary['outline']; paragraphs: number }> {
-  const zip = await JSZip.loadAsync(bytesToArrayBuffer(bytes))
-  const content = await zip.file('content.xml')?.async('text')
-  if (!content) return { html: '<p>没有找到 ODT 正文。</p>', outline: [], paragraphs: 0 }
-
-  const headingMatches = Array.from(content.matchAll(/<text:h\b([^>]*)>([\s\S]*?)<\/text:h>/g))
-  const paragraphMatches = Array.from(content.matchAll(/<text:p\b[^>]*>([\s\S]*?)<\/text:p>/g))
-  const outline = headingMatches.map((match) => ({
-    level: xmlRepeat(match[1], 'text:outline-level'),
-    text: decodeXml(stripXml(match[2])).trim(),
-  })).filter((item) => item.text)
-  const body = Array.from(content.matchAll(/<(text:h|text:p)\b([^>]*)>([\s\S]*?)<\/\1>/g)).map((match) => {
-    const text = decodeXml(stripXml(match[3])).trim()
-    if (!text) return ''
-    if (match[1] === 'text:h') {
-      const level = Math.min(xmlRepeat(match[2], 'text:outline-level'), 6)
-      return `<h${level}>${escapeText(text)}</h${level}>`
-    }
-    return `<p>${escapeText(text)}</p>`
-  }).join('')
-  return { html: body || '<p>没有找到 ODT 正文。</p>', outline, paragraphs: paragraphMatches.length }
 }
 
 function parseRtf(source: string): { html: string; outline: WordSummary['outline']; paragraphs: number } {

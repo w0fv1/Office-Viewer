@@ -12,13 +12,13 @@ export type PreviewContent =
   | { kind: 'presentation'; slides: PresentationSlide[] }
   | { kind: 'archive'; items: ArchiveItem[] }
   | { kind: 'pdf'; objectUrl: string; summary: PdfSummary }
-  | { kind: 'media'; media: 'image' | 'tiff' | 'icns'; objectUrl: string }
+  | { kind: 'media'; media: 'image' | 'tiff' | 'icns' | 'audio' | 'video'; objectUrl: string }
   | { kind: 'font'; objectUrl: string }
-  | { kind: 'epub'; summary: EpubSummary }
+  | BookContent
+  | { kind: 'email'; subject: string; from: string; to: string; date: string; html: string; attachments: Array<{ name: string; mime: string }> }
   | { kind: 'xmind'; summary: XMindSummary }
   | { kind: 'psd'; summary: PsdSummary }
-  | { kind: 'hex'; summary: HexSummary }
-  | { kind: 'cfb'; summary: CfbSummary }
+  | { kind: 'unsupported' }
 
 export type PreviewStat = {
   label: string
@@ -67,11 +67,11 @@ export type PdfSummary = {
   text: string
 }
 
-export type EpubSummary = {
+export type BookContent = {
+  kind: 'book'
   title: string
   creator: string
-  packagePath: string
-  chapters: string[]
+  chapters: Array<{ title: string; html: string }>
 }
 
 export type XMindSummary = {
@@ -84,14 +84,4 @@ export type PsdSummary = {
   height: number
   layerCount: number
   layers: string[]
-}
-
-export type HexSummary = {
-  intro: string
-  textPreview?: string
-  rows: Array<{ offset: string; hex: string; ascii: string }>
-}
-
-export type CfbSummary = {
-  entries: Array<{ name: string; size: number }>
 }

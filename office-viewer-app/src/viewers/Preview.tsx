@@ -1,3 +1,4 @@
+import { BookPreview, EmailPreview, MediaPreview } from './ExtendedPreview'
 import { useEffect, useState } from 'react'
 import { formatBytes } from '../lib/format'
 import type { FilePayload, OpenTab, ViewerDescriptor } from '../types'
@@ -19,18 +20,8 @@ export function Preview({ tab, viewer, payload, state }: { tab?: OpenTab; viewer
   if (content.kind === 'sheet') return <SheetPreview tables={content.tables} />
   if (content.kind === 'presentation') return <PresentationPreview slides={content.slides} />
   if (content.kind === 'archive') return <ArchivePreview items={content.items} />
-  if (content.kind === 'epub') {
-    const epub = content.summary
-    return (
-      <div className="summary-view">
-        <h1>{epub.title || payload.name}</h1>
-        <p>{epub.creator || 'Unknown creator'}</p>
-        <p className="path">{epub.packagePath}</p>
-        <h2>Spine / Chapters</h2>
-        <ol>{epub.chapters.map((chapter) => <li key={chapter}>{chapter}</li>)}</ol>
-      </div>
-    )
-  }
+  if (content.kind === 'book') return <BookPreview key={payload.path} content={content} />
+  if (content.kind === 'email') return <EmailPreview content={content} />
   if (content.kind === 'xmind') {
     const xmind = content.summary
     return (
@@ -52,45 +43,8 @@ export function Preview({ tab, viewer, payload, state }: { tab?: OpenTab; viewer
       </div>
     )
   }
-  if (content.kind === 'hex') {
-    const hex = content.summary
-    return (
-      <div className="hex-view">
-        <div className="hex-intro">{hex.intro}</div>
-        {hex.textPreview && (
-          <>
-            <h2>文本尝试预览</h2>
-            <pre>{hex.textPreview}</pre>
-          </>
-        )}
-        <h2>十六进制预览</h2>
-        <table>
-          <tbody>
-            {hex.rows.map((row) => (
-              <tr key={row.offset}>
-                <th>{row.offset}</th>
-                <td>{row.hex}</td>
-                <td>{row.ascii}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    )
-  }
-  if (content.kind === 'cfb') {
-    return (
-      <div className="summary-view">
-        <h1>{payload.name}</h1>
-        <p>旧版 Office 二进制复合文档。未识别到可直接渲染的工作表单元格，已切换为容器结构预览。</p>
-        <h2>Streams</h2>
-        <ul>{content.summary.entries.map((entry) => <li key={entry.name}>{entry.name} ({formatBytes(entry.size)})</li>)}</ul>
-      </div>
-    )
-  }
-  if (content.kind === 'media') {
-    return <div className="media-view"><img src={content.objectUrl} alt={payload.name} /></div>
-  }
+  if (content.kind === 'unsupported') return <div className="empty-view">不支持预览此文件</div>
+  if (content.kind === 'media') return <MediaPreview key={content.objectUrl} content={content} name={payload.name} />
   if (content.kind === 'pdf') {
     return (
       <div className="pdf-layout">
