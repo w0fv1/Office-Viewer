@@ -25,7 +25,11 @@ export type ViewerDescriptor = {
   extensions: readonly string[]
   editable: boolean
   load: (payload: FilePayload) => Promise<LoadState>
+  loadUrl?: (payload: UrlPayload) => Promise<LoadState>
 }
+
+export type FileMetadata = Omit<FilePayload, 'bytes'>
+export type UrlPayload = FileMetadata & { url: string; signal?: AbortSignal }
 
 export type OpenTab = {
   path: string

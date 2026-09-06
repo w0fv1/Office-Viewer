@@ -1,10 +1,10 @@
 import { BookPreview, EmailPreview, MediaPreview } from './ExtendedPreview'
 import { useEffect, useState } from 'react'
 import { formatBytes } from '../lib/format'
-import type { FilePayload, OpenTab, ViewerDescriptor } from '../types'
+import type { FileMetadata, OpenTab, ViewerDescriptor } from '../types'
 import type { ArchiveItem, LoadState, PresentationSlide, SheetTable, WordOutlineItem } from './previewTypes'
 
-export function Preview({ tab, viewer, payload, state }: { tab?: OpenTab; viewer?: ViewerDescriptor; payload: FilePayload | null; state: LoadState }) {
+export function Preview({ tab, viewer, payload, state }: { tab?: OpenTab; viewer?: ViewerDescriptor; payload: FileMetadata | null; state: LoadState }) {
   if (!tab) return <div className="empty-view">打开一个文件以开始预览</div>
   if (state.status === 'loading') return <div className="empty-view">正在解析 {tab.name}...</div>
   if (state.status === 'error') return <div className="error-view">{state.message}</div>

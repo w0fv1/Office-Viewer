@@ -7,10 +7,25 @@ import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import { bytesToArrayBuffer, bytesToObjectUrl, bytesToText } from '../lib/bytes'
 import { formatBytes } from '../lib/format'
 import { decodeXml, stripXml } from '../lib/xml'
-import type { FilePayload } from '../types'
+import type { FilePayload, UrlPayload } from '../types'
 import type { LoadState, PdfSummary, PresentationSummary, XMindSummary } from './previewTypes'
 
 export type RenderKind = 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'tiff' | 'icns' | 'archive' | 'epub' | 'xmind' | 'psd' | 'font' | 'audio' | 'video' | 'email'
+export type UrlRenderKind = 'pdf' | 'image' | 'font' | 'audio' | 'video'
+
+export async function renderUrlPayload(payload: UrlPayload, kind: UrlRenderKind): Promise<LoadState> {
+  try {
+    payload.signal?.throwIfAborted()
+    if (kind === 'pdf') {
+      const summary = await parsePdf(payload.url, payload.signal)
+      return { status: 'ready', content: { kind: 'pdf', objectUrl: payload.url, summary }, stats: [{ label: '页数', value: String(summary.pages) }] }
+    }
+    if (kind === 'font') return { status: 'ready', content: { kind: 'font', objectUrl: payload.url } }
+    return { status: 'ready', content: { kind: 'media', media: kind, objectUrl: payload.url } }
+  } catch (error) {
+    return { status: 'error', message: error instanceof Error ? error.message : String(error) }
+  }
+}
 
 export async function renderPayload(payload: FilePayload, kind: RenderKind): Promise<LoadState> {
   try {
@@ -159,20 +174,30 @@ async function presentationNotes(zip: JSZip, slideNumber: number): Promise<strin
   return extractXmlText(await notes.async('text'))
 }
 
-async function parsePdf(bytes: Uint8Array): Promise<PdfSummary> {
+async function parsePdf(source: Uint8Array | string, signal?: AbortSignal): Promise<PdfSummary> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs')
   if (typeof Worker !== 'undefined') pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl
-  const document = await pdfjs.getDocument({
-    data: new Uint8Array(bytes),
-  }).promise
-  const pages: string[] = []
-  for (let pageNumber = 1; pageNumber <= Math.min(document.numPages, 10); pageNumber += 1) {
-    const page = await document.getPage(pageNumber)
-    const content = await page.getTextContent()
-    const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ')
-    if (text.trim()) pages.push(text.trim())
+  signal?.throwIfAborted()
+  const task = pdfjs.getDocument(typeof source === 'string'
+    ? { url: source, disableAutoFetch: true, disableStream: true }
+    : { data: new Uint8Array(source) })
+  const abort = () => { void task.destroy().catch(() => {}) }
+  signal?.addEventListener('abort', abort, { once: true })
+  try {
+    const document = await task.promise
+    const pages: string[] = []
+    for (let pageNumber = 1; pageNumber <= Math.min(document.numPages, 10); pageNumber += 1) {
+      signal?.throwIfAborted()
+      const page = await document.getPage(pageNumber)
+      const content = await page.getTextContent()
+      const text = content.items.map((item) => 'str' in item ? item.str : '').join(' ')
+      if (text.trim()) pages.push(text.trim())
+    }
+    return { pages: document.numPages, text: pages.join('\n\n').slice(0, 20000) }
+  } finally {
+    signal?.removeEventListener('abort', abort)
+    await task.destroy()
   }
-  return { pages: document.numPages, text: pages.join('\n\n').slice(0, 20000) }
 }
 
 async function renderSpreadsheet(payload: FilePayload): Promise<LoadState> {
