@@ -1,10 +1,20 @@
 import { BookPreview, EmailPreview, MediaPreview } from './ExtendedPreview'
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { JavaPreview, ParquetPreview } from './DataPreview'
+import { PreviewBoundary } from './PreviewBoundary'
+import './visualPreview.css'
+const VisualPreview = lazy(() => import('./VisualPreview'))
 import { formatBytes } from '../lib/format'
 import type { FileMetadata, OpenTab, ViewerDescriptor } from '../types'
 import type { ArchiveItem, LoadState, PresentationSlide, SheetTable, WordOutlineItem } from './previewTypes'
 
-export function Preview({ tab, viewer, payload, state }: { tab?: OpenTab; viewer?: ViewerDescriptor; payload: FileMetadata | null; state: LoadState }) {
+type PreviewProps = { tab?: OpenTab; viewer?: ViewerDescriptor; payload: FileMetadata | null; state: LoadState }
+
+export function Preview(props: PreviewProps) {
+  return <PreviewBoundary key={props.payload?.path}><PreviewBody {...props} /></PreviewBoundary>
+}
+
+function PreviewBody({ tab, viewer, payload, state }: PreviewProps) {
   if (!tab) return <div className="empty-view">打开一个文件以开始预览</div>
   if (state.status === 'loading') return <div className="empty-view">正在解析 {tab.name}...</div>
   if (state.status === 'error') return <div className="error-view">{state.message}</div>
@@ -17,32 +27,14 @@ export function Preview({ tab, viewer, payload, state }: { tab?: OpenTab; viewer
   if (content.kind === 'html') {
     return <article className={`document-view ${viewer?.id ?? ''}`} dangerouslySetInnerHTML={{ __html: content.html }} />
   }
+  if (content.kind === 'xmind' || content.kind === 'psd' || (content.kind === 'presentation' && content.source)) return <Suspense fallback={<div className="empty-view">正在加载...</div>}><VisualPreview key={payload.path} content={content} /></Suspense>
+  if (content.kind === 'parquet') return <ParquetPreview key={payload.path} content={content} />
+  if (content.kind === 'java') return <JavaPreview bytes={content.bytes} />
   if (content.kind === 'sheet') return <SheetPreview tables={content.tables} />
   if (content.kind === 'presentation') return <PresentationPreview slides={content.slides} />
   if (content.kind === 'archive') return <ArchivePreview items={content.items} />
   if (content.kind === 'book') return <BookPreview key={payload.path} content={content} />
   if (content.kind === 'email') return <EmailPreview content={content} />
-  if (content.kind === 'xmind') {
-    const xmind = content.summary
-    return (
-      <div className="summary-view">
-        <h1>{xmind.title || payload.name}</h1>
-        <h2>Topics</h2>
-        <ul>{xmind.topics.map((topic, index) => <li key={`${topic}-${index}`}>{topic}</li>)}</ul>
-      </div>
-    )
-  }
-  if (content.kind === 'psd') {
-    const psd = content.summary
-    return (
-      <div className="summary-view">
-        <h1>{payload.name}</h1>
-        <p>{psd.width} x {psd.height}px, {psd.layerCount} layers</p>
-        <h2>Layers</h2>
-        <ul>{psd.layers.map((layer, index) => <li key={`${layer}-${index}`}>{layer}</li>)}</ul>
-      </div>
-    )
-  }
   if (content.kind === 'unsupported') return <div className="empty-view">不支持预览此文件</div>
   if (content.kind === 'media') return <MediaPreview key={content.objectUrl} content={content} name={payload.name} />
   if (content.kind === 'pdf') {

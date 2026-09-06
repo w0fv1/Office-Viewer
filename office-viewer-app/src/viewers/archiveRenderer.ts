@@ -22,7 +22,18 @@ async function parseArchive(payload: FilePayload): Promise<ArchiveItem[]> {
   }
   if (payload.extension === '7z') return parse7zArchive(payload.bytes)
   if (payload.extension === 'rar') return parseRarArchive(payload.bytes)
-  return parseZipArchive(payload.bytes)
+  return parseZipArchive(payload.extension === 'crx' ? crxZip(payload.bytes) : payload.bytes)
+}
+
+function crxZip(bytes: Uint8Array): Uint8Array {
+  if (bytes.length < 12 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'Cr24') throw new Error('无效的 CRX 文件头')
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  const version = view.getUint32(4, true)
+  if (version !== 2 && version !== 3) throw new Error('不支持此 CRX 版本')
+  if (version === 2 && bytes.length < 16) throw new Error('CRX 文件头不完整')
+  const offset = version === 2 ? 16 + view.getUint32(8, true) + view.getUint32(12, true) : 12 + view.getUint32(8, true)
+  if (offset + 4 > bytes.length || view.getUint32(offset, true) !== 0x04034b50) throw new Error('CRX 中未找到 ZIP 内容')
+  return bytes.subarray(offset)
 }
 
 async function parseZipArchive(bytes: Uint8Array): Promise<ArchiveItem[]> {

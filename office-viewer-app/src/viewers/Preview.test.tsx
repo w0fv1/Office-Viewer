@@ -1,7 +1,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Preview } from './Preview'
 import type { LoadState } from './previewTypes'
 
@@ -10,6 +10,18 @@ const tab = { path: payload.path, name: payload.name, viewerId: 'fallback' }
 const render = (state: LoadState) => <Preview tab={tab} payload={payload} state={state} />
 
 describe('preview content', () => {
+  it('terminates the Java worker when its preview closes', async () => {
+    const terminate = vi.fn()
+    const postMessage = vi.fn()
+    vi.stubGlobal('Worker', class { terminate = terminate; postMessage = postMessage })
+    const root = createRoot(document.createElement('div'))
+    try {
+      await act(async () => root.render(render({ status: 'ready', content: { kind: 'java', bytes: new Uint8Array([1]) } })))
+      expect(postMessage).toHaveBeenCalledTimes(1)
+      await act(async () => root.unmount())
+      expect(terminate).toHaveBeenCalledTimes(1)
+    } finally { vi.unstubAllGlobals() }
+  })
   it('shows a single unsupported message without technical fallback content', () => {
     const html = renderToStaticMarkup(render({ status: 'ready', content: { kind: 'unsupported' } }))
     expect(html).toContain('不支持预览此文件')

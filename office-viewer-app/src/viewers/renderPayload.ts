@@ -1,6 +1,5 @@
 import { renderOpenDocument } from './openDocumentRenderer'
 import { audioFormats, videoFormats } from './mediaFormats'
-import type { Layer } from 'ag-psd'
 import type ExcelJS from 'exceljs'
 import type JSZip from 'jszip'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
@@ -8,9 +7,9 @@ import { bytesToArrayBuffer, bytesToObjectUrl, bytesToText } from '../lib/bytes'
 import { formatBytes } from '../lib/format'
 import { decodeXml, stripXml } from '../lib/xml'
 import type { FilePayload, UrlPayload } from '../types'
-import type { LoadState, PdfSummary, PresentationSummary, XMindSummary } from './previewTypes'
+import type { LoadState, PdfSummary, PresentationSummary } from './previewTypes'
 
-export type RenderKind = 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'tiff' | 'icns' | 'archive' | 'epub' | 'xmind' | 'psd' | 'font' | 'audio' | 'video' | 'email'
+export type RenderKind = 'spreadsheet' | 'presentation' | 'pdf' | 'image' | 'tiff' | 'icns' | 'archive' | 'epub' | 'xmind' | 'psd' | 'font' | 'audio' | 'video' | 'email' | 'heic' | 'cur' | 'parquet' | 'java'
 export type UrlRenderKind = 'pdf' | 'image' | 'font' | 'audio' | 'video'
 
 export async function renderUrlPayload(payload: UrlPayload, kind: UrlRenderKind): Promise<LoadState> {
@@ -36,6 +35,9 @@ export async function renderPayload(payload: FilePayload, kind: RenderKind): Pro
 }
 
 async function renderReadyPayload(payload: FilePayload, kind: RenderKind): Promise<LoadState> {
+  if (kind === 'heic' || kind === 'cur' || kind === 'psd' || kind === 'xmind') return (await import('./visualFormats')).renderVisual(payload, kind)
+  if (kind === 'parquet') return (await import('./parquetRenderer')).renderParquet(payload)
+  if (kind === 'java') return { status: 'ready', content: { kind: 'java', bytes: payload.bytes } }
   if (kind === 'spreadsheet') {
     return renderSpreadsheet(payload)
   }
@@ -45,7 +47,7 @@ async function renderReadyPayload(payload: FilePayload, kind: RenderKind): Promi
     const presentation = await parsePresentation(payload.bytes)
     return {
       status: 'ready',
-      content: { kind: 'presentation', slides: presentation.slides },
+      content: { kind: 'presentation', slides: presentation.slides, source: payload.bytes },
       stats: [
         { label: '幻灯片', value: String(presentation.slides.length) },
         { label: '备注', value: String(presentation.slides.filter((slide) => slide.notes).length) },
@@ -62,34 +64,6 @@ async function renderReadyPayload(payload: FilePayload, kind: RenderKind): Promi
   if (kind === 'audio' || kind === 'video') {
     const formats = kind === 'audio' ? audioFormats : videoFormats
     return { status: 'ready', content: { kind: 'media', media: kind, objectUrl: bytesToObjectUrl(payload.bytes, formats[payload.extension ?? ''] ?? payload.mime) } }
-  }
-
-  if (kind === 'xmind') {
-    const xmind = await parseXMind(payload.bytes)
-    return {
-      status: 'ready',
-      content: { kind: 'xmind', summary: xmind },
-      stats: [{ label: '主题', value: String(xmind.topics.length) }],
-    }
-  }
-
-  if (kind === 'psd') {
-    const { readPsd } = await import('ag-psd')
-    const psd = readPsd(payload.bytes, { skipCompositeImageData: true, skipLayerImageData: true, skipThumbnail: true })
-    const layers = flattenPsdLayers(psd.children ?? [])
-    return {
-      status: 'ready',
-      content: { kind: 'psd', summary: {
-        width: psd.width,
-        height: psd.height,
-        layerCount: layers.length,
-        layers: layers.slice(0, 200),
-      } },
-      stats: [
-        { label: '尺寸', value: `${psd.width} x ${psd.height}` },
-        { label: '图层', value: String(layers.length) },
-      ],
-    }
   }
 
   if (kind === 'tiff') {
@@ -151,27 +125,36 @@ async function renderReadyPayload(payload: FilePayload, kind: RenderKind): Promi
 async function parsePresentation(bytes: Uint8Array): Promise<PresentationSummary> {
   const { default: JSZip } = await import('jszip')
   const zip = await JSZip.loadAsync(bytesToArrayBuffer(bytes))
-  const slideNames = Object.keys(zip.files).filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).sort(naturalSort)
+  const manifest = await zip.file('ppt/presentation.xml')?.async('text')
+  const relations = await presentationRelations(zip, 'ppt/presentation.xml')
+  const order = manifest ? Array.from(new DOMParser().parseFromString(manifest, 'application/xml').getElementsByTagNameNS('*', 'sldId'))
+    .map((element) => relations.find((relation) => relation.id === element.getAttributeNS('http://schemas.openxmlformats.org/officeDocument/2006/relationships', 'id'))?.path)
+    .filter((path): path is string => !!path) : []
+  const slideNames = order.length ? order : Object.keys(zip.files).filter((name) => /^ppt\/slides\/slide\d+\.xml$/.test(name)).sort(naturalSort)
   const slides = await Promise.all(slideNames.map(async (name, index) => {
     const xml = await zip.files[name].async('text')
     const slideNumber = Number.parseInt(name.match(/slide(\d+)\.xml$/)?.[1] ?? String(index + 1), 10)
-    const notes = await presentationNotes(zip, slideNumber)
+    const notesRelation = (await presentationRelations(zip, name)).find((relation) => relation.type.endsWith('/notesSlide'))
+    const notes = await zip.file(notesRelation?.path ?? `ppt/notesSlides/notesSlide${slideNumber}.xml`)?.async('text') ?? ''
     const text = extractXmlText(xml)
     const lines = text.split(/\s{2,}|\n/).map((line) => line.trim()).filter(Boolean)
     return {
       index: index + 1,
       title: lines[0] ?? `Slide ${index + 1}`,
       text,
-      notes,
+      notes: extractXmlText(notes),
     }
   }))
   return { slides }
 }
 
-async function presentationNotes(zip: JSZip, slideNumber: number): Promise<string> {
-  const notes = zip.file(`ppt/notesSlides/notesSlide${slideNumber}.xml`)
-  if (!notes) return ''
-  return extractXmlText(await notes.async('text'))
+async function presentationRelations(zip: JSZip, part: string): Promise<Array<{ id: string; type: string; path: string }>> {
+  const split = part.lastIndexOf('/')
+  const xml = await zip.file(`${part.slice(0, split)}/_rels/${part.slice(split + 1)}.rels`)?.async('text')
+  if (!xml) return []
+  return Array.from(new DOMParser().parseFromString(xml, 'application/xml').getElementsByTagNameNS('*', 'Relationship'))
+    .filter((element) => element.getAttribute('TargetMode') !== 'External')
+    .map((element) => ({ id: element.getAttribute('Id') ?? '', type: element.getAttribute('Type') ?? '', path: new URL(element.getAttribute('Target') ?? '', `https://preview.invalid/${part}`).pathname.slice(1) }))
 }
 
 async function parsePdf(source: Uint8Array | string, signal?: AbortSignal): Promise<PdfSummary> {
@@ -469,39 +452,4 @@ function cellToString(value: ExcelJS.CellValue): string {
     return JSON.stringify(value)
   }
   return String(value)
-}
-
-async function parseXMind(bytes: Uint8Array): Promise<XMindSummary> {
-  const { default: JSZip } = await import('jszip')
-  const zip = await JSZip.loadAsync(bytesToArrayBuffer(bytes))
-  const content = await zip.file('content.json')?.async('text')
-  if (content) {
-    const sheets = JSON.parse(content) as Array<{ title?: string; rootTopic?: unknown }>
-    const topics = sheets.flatMap((sheet) => collectXMindTopics(sheet.rootTopic))
-    return { title: sheets[0]?.title ?? topics[0] ?? '', topics: topics.slice(0, 300) }
-  }
-
-  const legacy = await zip.file('content.xml')?.async('text')
-  if (legacy) {
-    const topics = Array.from(legacy.matchAll(/<title>([^<]+)<\/title>/g)).map((match) => decodeXml(match[1]))
-    return { title: topics[0] ?? '', topics: topics.slice(0, 300) }
-  }
-
-  return { title: '', topics: Object.keys(zip.files).slice(0, 100) }
-}
-
-function collectXMindTopics(topic: unknown): string[] {
-  if (!topic || typeof topic !== 'object') return []
-  const candidate = topic as { title?: string; children?: { attached?: unknown[]; detached?: unknown[] } }
-  const current = candidate.title ? [candidate.title] : []
-  const attached = candidate.children?.attached ?? []
-  const detached = candidate.children?.detached ?? []
-  return [...current, ...attached.flatMap(collectXMindTopics), ...detached.flatMap(collectXMindTopics)]
-}
-
-function flattenPsdLayers(layers: Layer[]): string[] {
-  return layers.flatMap((layer) => [
-    layer.name ?? '(unnamed layer)',
-    ...flattenPsdLayers(layer.children ?? []),
-  ])
 }

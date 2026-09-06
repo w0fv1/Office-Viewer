@@ -9,15 +9,17 @@ export type PreviewContent =
   | { kind: 'html'; html: string }
   | { kind: 'text'; text: string }
   | { kind: 'sheet'; tables: SheetTable[] }
-  | { kind: 'presentation'; slides: PresentationSlide[] }
+  | { kind: 'presentation'; slides: PresentationSlide[]; source?: Uint8Array }
+  | { kind: 'parquet'; columns: Array<{ name: string; type: string }>; rowCount: number; readRows: (start: number, end: number) => Promise<string[][]> }
+  | { kind: 'java'; bytes: Uint8Array }
   | { kind: 'archive'; items: ArchiveItem[] }
   | { kind: 'pdf'; objectUrl: string; summary: PdfSummary }
   | { kind: 'media'; media: 'image' | 'tiff' | 'icns' | 'audio' | 'video'; objectUrl: string }
   | { kind: 'font'; objectUrl: string }
   | BookContent
   | { kind: 'email'; subject: string; from: string; to: string; date: string; html: string; attachments: Array<{ name: string; mime: string }> }
-  | { kind: 'xmind'; summary: XMindSummary }
-  | { kind: 'psd'; summary: PsdSummary }
+  | { kind: 'xmind'; sheets: Array<{ title: string; data: import('mind-elixir').MindElixirData }> }
+  | { kind: 'psd'; summary: PsdSummary; objectUrl: string }
   | { kind: 'unsupported' }
 
 export type PreviewStat = {
@@ -72,11 +74,6 @@ export type BookContent = {
   title: string
   creator: string
   chapters: Array<{ title: string; html: string }>
-}
-
-export type XMindSummary = {
-  title: string
-  topics: string[]
 }
 
 export type PsdSummary = {
