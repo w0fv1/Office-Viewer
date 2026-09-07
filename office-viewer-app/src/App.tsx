@@ -1,4 +1,5 @@
-import { open } from '@tauri-apps/plugin-dialog'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import { savePreviewImage } from './lib/previewImage'
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Clock, Command, Copy, FileArchive, FileText, FolderOpen, LocateFixed, RefreshCw, Search, Settings, X } from 'lucide-react'
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './App.css'
@@ -467,6 +468,13 @@ function App() {
           )}
           {activeTab && (
             <div className="file-actions">
+              <button type="button" onClick={async () => {
+                const outputPath = await save({ defaultPath: `${activeTab.name}.png`, filters: [{ name: 'PNG', extensions: ['png'] }] })
+                if (!outputPath) return
+                setMessage('正在生成预览图…')
+                try { await savePreviewImage(activeTab.path, outputPath); setMessage(`已保存预览图：${outputPath}`) }
+                catch (error) { setMessage(String(error)) }
+              }}>导出预览图</button>
               <button type="button" onClick={copyActivePath}>
                 <Copy size={14} />
                 复制路径

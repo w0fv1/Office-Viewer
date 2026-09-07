@@ -104,3 +104,24 @@ node scripts/verify-samples.mjs
 验证覆盖 DOCX、ODT、RTF、XLSX、XLS BIFF、ODS、PPTX、PDF、Markdown、PNG、TIFF、ICNS、ZIP、7Z、TAR、TAR.GZ、EPUB、XMind、PSD 和未知二进制 fallback。RAR 读取能力通过 `node-unrar-js`/`unrar.wasm` 接入；仓库内不生成 RAR fixture，因为本地和 7-Zip wasm 不提供 RAR 创建能力。
 
 2026-09-07 扩展验证：100 项单元测试通过，包含 CRX2/3 包装头、CUR 图片、Parquet 精确整数与分页、XMind 层级、PPTX 重新排序后的备注、Java 真实方法反编译和 Worker 关闭。浏览器通过 Vertree 的实际 loopback 预览服务验证了幻灯片画面及翻页、Parquet Range/分页、HEIC 照片、CUR 指针、PSD 合成图、XMind 导图和 Java 源码。HEIC 实测样例来自 libheif 的 `examples/example.heic`；CUR 实测样例来自上游 PDF.js 资源，外部样例未加入本仓库。
+
+## 导出文件预览图
+
+Office-Viewer 提供共享 PNG 渲染模块，桌面文件操作区也有“导出预览图”入口。交互预览和导出复用同一份 viewer registry、解析器和组件。
+
+Tauri 应用中传入本机绝对路径：
+
+```ts
+import { previewImage, savePreviewImage } from './src/lib/previewImage'
+
+const png: Blob = await previewImage('C:/Documents/report.pdf', {
+  width: 1200, height: 1600, page: 1,
+})
+await savePreviewImage('C:/Documents/report.pdf', 'C:/Documents/preview.png')
+```
+
+嵌入到浏览器宿主时使用 `src/viewers/previewImage.tsx` 的 `exportPreviewImage(payload, options, signal)`。payload 接受现有 FilePayload，或 FileMetadata 加文件 URL。返回 `image/png` Blob，不修改交互预览。此函数需要浏览器 DOM；路径读取和 HTTP 接口由宿主提供，Office-Viewer 本身没有额外启动 HTTP 服务。
+
+默认 1200 × 1600；宽高范围 1–4096。`page` 从 1 开始，用于 PDF/幻灯片/工作表/电子书章节/XMind 画布，Parquet 每页 100 行；连续文档为首屏。`timeSeconds` 指视频帧时间。图片与分页画布按比例适配，背景白色。视频编码能力取决于系统 WebView。
+
+未知格式继续使用现有文本检测；不支持的二进制或音频返回 `UNSUPPORTED`，页码超界返回 `PAGE_OUT_OF_RANGE`，参数错误返回 `INVALID_OPTIONS`，默认 30 秒超时返回 `RENDER_TIMEOUT`。错误暴露 `code`、`message`，不会把错误提示或元信息当成预览图。构建生成的 `capabilities.json` 列出同一 registry 的扩展名、图片与选页能力。

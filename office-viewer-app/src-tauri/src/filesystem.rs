@@ -1,4 +1,12 @@
 use crate::formats::{extension, guess_mime};
+
+#[tauri::command]
+pub(crate) fn save_preview_image(path: String, bytes: Vec<u8>) -> Result<(), String> {
+    if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return Err("Expected a PNG image".to_string());
+    }
+    fs::write(path, bytes).map_err(|error| error.to_string())
+}
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{

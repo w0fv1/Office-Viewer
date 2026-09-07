@@ -69,3 +69,11 @@ export function resolveViewer(path: string): ViewerDescriptor {
 export function viewerById(id: string): ViewerDescriptor {
   return viewersById.get(id) ?? fallbackViewer
 }
+
+export function previewCapabilities() {
+  return viewerRegistry.map(({ id, label, extensions }) => ({
+    id, label, extensions,
+    image: id !== 'audio',
+    selection: ['pdf', 'presentation', 'spreadsheet', 'epub', 'xmind', 'parquet'].includes(id) ? 'page' : id === 'video' ? 'timeSeconds' : 'first-viewport',
+  }))
+}

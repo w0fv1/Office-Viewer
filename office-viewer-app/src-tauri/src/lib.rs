@@ -13,6 +13,7 @@ mod system;
 use filesystem::{
     file_name, hash_file, list_directory, read_file_bytes, read_file_metadata, save_text_file,
 };
+use filesystem::save_preview_image;
 use formats::{
     extension, is_archive_search_candidate, is_office_search_candidate, is_pdf_search_candidate,
     is_text_search_candidate, office_xml_candidates,
@@ -481,6 +482,7 @@ pub fn run() {
             read_file_metadata,
             read_file_bytes,
             save_text_file,
+            save_preview_image,
             hash_file,
             open_in_system,
             reveal_in_file_manager,

@@ -1,0 +1,13 @@
+.preview-image-export { background: #fff; color: #18212b; overflow: hidden; font: 18px/1.5 "Segoe UI", sans-serif; color-scheme: light; box-sizing: border-box; }
+.preview-image-export *, .preview-image-export *::before, .preview-image-export *::after { box-sizing: border-box; animation: none !important; transition: none !important; }
+.preview-image-export .word-outline, .preview-image-export .preview-toolbar, .preview-image-export .sheet-tabs, .preview-image-export .slide-list, .preview-image-export .book-nav { display: none !important; }
+.preview-image-export .word-layout, .preview-image-export .presentation-view, .preview-image-export .book-view { display: block; }
+.preview-image-export .document-view, .preview-image-export .text-view, .preview-image-export .slide-detail { margin: 0; padding: 32px; background: #fff; color: #18212b; max-height: none; }
+.preview-image-export pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.preview-image-export .sheet-view { padding: 16px; overflow: hidden; }
+.preview-image-export table { border-collapse: collapse; }
+.preview-image-export td, .preview-image-export th { border: 1px solid #cbd5e1; padding: 8px 12px; }
+.preview-image-export img { max-width: 100%; }
+.preview-image-export .mind-stage { height: 100%; }
+.preview-image-export .mind-view { height: 100%; }
+.preview-image-export .mind-elixir-toolbar { display: none !important; }

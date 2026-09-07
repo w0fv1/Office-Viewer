@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { PPTXViewer } from 'pptxviewjs'
+import type { PPTXViewer } from 'pptxviewjs'
+import { presentationEngine } from './presentationEngine'
 import type { PreviewContent } from './previewTypes'
 
 export default function SlidesPreview({ content }: { content: Extract<PreviewContent, { kind: 'presentation' }> }) {
@@ -15,14 +16,18 @@ export default function SlidesPreview({ content }: { content: Extract<PreviewCon
   const [busy, setBusy] = useState(true)
   useEffect(() => {
     let active = true
-    const next = new PPTXViewer({ canvas: canvas.current, slideSizeMode: 'fit', backgroundColor: '#ffffff', autoChartRerenderDelayMs: 0 })
-    next.loadFile(content.source!).then(() => {
-      if (!active) { next.destroy(); return }
-      if (!next.getSlideCount()) throw new Error('此文件中未找到可渲染的幻灯片')
-      setCount(next.getSlideCount())
-      setViewer(next)
+    let next: PPTXViewer | undefined
+    presentationEngine().then(async ({ PPTXViewer }) => {
+      if (!active) return
+      const instance = new PPTXViewer({ canvas: canvas.current, slideSizeMode: 'fit', backgroundColor: '#ffffff', autoChartRerenderDelayMs: 0 })
+      next = instance
+      await instance.loadFile(content.source!)
+      if (!active) return
+      if (!instance.getSlideCount()) throw new Error('此文件中未找到可渲染的幻灯片')
+      setCount(instance.getSlideCount())
+      setViewer(instance)
     }).catch((reason: unknown) => { if (active) { setError(String(reason)); setBusy(false) } })
-    return () => { active = false; next.destroy() }
+    return () => { active = false; next?.destroy() }
   }, [content.source])
   useEffect(() => {
     const element = stage.current!
@@ -41,7 +46,7 @@ export default function SlidesPreview({ content }: { content: Extract<PreviewCon
     }).catch((reason: unknown) => { if (active) setError(String(reason)) }).finally(() => { if (active) setBusy(false) })
     return () => { active = false }
   }, [viewer, page, width, zoom])
-  return <div className="visual-slides">
+  return <div className="visual-slides" data-preview-ready={!busy}>
     <div className="preview-toolbar">
       <button disabled={busy || page === 0} onClick={() => setPage(page - 1)}>上一页</button>
       <span>{count ? `${page + 1} / ${count}` : '正在读取...'}</span>
